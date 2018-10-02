@@ -168,7 +168,10 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline)
 {
-    //TODO: check for empty cmdline
+	//check empty command line
+	if(!strcmp(cmdline,"\n"))
+	{return;}
+	
 	//create an array for args to be stored in, then parse to fill and see if it is a BG process
 	char * argv[MAXARGS];
 	int bg = parseline(cmdline, argv);
@@ -280,19 +283,18 @@ int builtin_cmd(char **argv)
 //4 built in commands here
 	if(!strcmp(argv[0],"quit"))
 	{
-		//kill children
 		exit(0);
 	}
 	else if(!strcmp(argv[0],"bg"))
 	{
-        do_bgfg(argv);
-        return 1;
-    }
+ 	       do_bgfg(argv);
+	        return 1;
+  	}
 	else if(!strcmp(argv[0],"fg"))
 	{
-        do_bgfg(argv);
-        return 1;
-   }
+        	do_bgfg(argv);
+        	return 1;
+   	}
 	else if(!strcmp(argv[0],"jobs"))
 	{
 		listjobs(jobs);
@@ -306,20 +308,24 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv)
 {
-	int pid;
+	//make sure there is some type of identifier after fg or bg
 	if(argv[1] == NULL)
 	{
 		printf("%s command requires PID or %%jobid argument\n",argv[0]);
 		fflush(stdout);
 		return;
 	}
+
+	//check if its a Job ID or PID
 	char * idType = argv[1]; 
 	if(idType[0] == '%') //jid
 	{
+		//remove % from jid
 	  	int size = sizeof(argv[1]);
     		char jobstring[size-1];
     		strncpy(jobstring, argv[1]+1, size-1);
 		
+		//confirm that jid is valid input
 		if(!isdigit(jobstring[0]))
 		{
 			printf("%s: argument must be a PID or %%jobid argument\n", argv[0]); 
@@ -327,14 +333,19 @@ void do_bgfg(char **argv)
 			return;
 		}
 		
+		//convert jid to an int
 		int jid = atoi(jobstring);
 		struct job_t * job = getjobjid(jobs,jid);
+		
+		//check if job exists
 		if(job == NULL)
 		{
 			printf("(%d): No such job\n", jid);
 			fflush(stdout);
 			return;
 		}		
+
+		//run as FG or BG
 		if(!strcmp(argv[0],"fg"))
 		{
 			job->state=FG;
@@ -352,6 +363,8 @@ void do_bgfg(char **argv)
 	
 	else //pid
 	{
+
+		//check if pid is valid input
 		char * tmp = argv[1];
 		if(!isdigit(tmp[0]))
 		{
@@ -359,8 +372,12 @@ void do_bgfg(char **argv)
 			fflush(stdout);
 			return;
 		}
-		pid = atoi(argv[1]);
+
+		//convert to int
+		int pid = atoi(argv[1]);
 		struct job_t * job = getjobpid(jobs, pid);
+
+		//make sure process exists
 		if(job == NULL)
 		{
 			printf("(%d): No such process\n", pid);
@@ -368,6 +385,7 @@ void do_bgfg(char **argv)
 			return;
 		}
 
+		//run as FG or BG
 		if(!strcmp(argv[0], "fg"))
 		{
 			job->state=FG;
@@ -392,6 +410,7 @@ void waitfg(pid_t pid)
 	if(pid == 0)
 	{return;}
 
+	//get job from table
 	struct job_t* job = getjobpid(jobs, pid);
 	if(job != NULL) //if the job still exists
 	{
@@ -425,6 +444,7 @@ void sigchld_handler(int sig)
 		sigfillset(&mask);
 		sigprocmask(SIG_BLOCK, &mask, NULL);
 
+		//ctrl-z, change stat and print message
 		if(WIFSTOPPED(status))
 		{
 			getjobpid(jobs, pid)->state=ST;
@@ -432,6 +452,8 @@ void sigchld_handler(int sig)
 			printf("Job [%d] (%d) Stopped by signal %d\n", jid,pid, WSTOPSIG(status));
 			fflush(stdout);
 		}
+		
+		//ctrl-c print job info and delete job from job table
 		else if(WIFSIGNALED(status))
 		{
 			if(WTERMSIG(status))
@@ -440,11 +462,9 @@ void sigchld_handler(int sig)
 				fflush(stdout);
 				deletejob(jobs,pid);
 			}
-			else
-			{
-				printf("signalled to continue?");
-			}
 		}
+
+		//when a child stops naturall, just delete job from job table
 		else if(WIFEXITED(status))
 		{
 			deletejob(jobs, pid);
@@ -452,7 +472,7 @@ void sigchld_handler(int sig)
 		else //error catch
 		{
 
-			printf("else??\n");
+			printf("some unexpected signal was recieved\n");
 			exit(0);
 		}
 
@@ -469,6 +489,7 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig)
 {
+	//get the pid of the fg job, if there is one send a ctrl-c signal to all children
 	pid_t pid = fgpid(jobs);
 	if(pid != 0)
 	{kill(-pid, sig);}
@@ -482,13 +503,14 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig)
 {
-    pid_t pid = fgpid(jobs);
-    if(pid != 0)
-    {
-        getjobpid(jobs, pid)->state=ST;
-	kill(-pid, sig);
-    }
-    return;
+	//get fg pid, if there is a fg job, change the state and send the sigstop to its children
+ 	pid_t pid = fgpid(jobs);
+ 	if(pid != 0)
+ 	{
+        	getjobpid(jobs, pid)->state=ST;
+		kill(-pid, sig);
+	}
+    	return;
 }
 
 /*********************
